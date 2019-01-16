@@ -10,7 +10,7 @@ $(document).ready(function() {
     messagingSenderId: "758333240147"
   };
   firebase.initializeApp(config);
-
+  let trainArr = [];
   let fireDB = firebase.database();
   let now = moment();
 
@@ -43,6 +43,8 @@ $(document).ready(function() {
       destination: destination,
       firstTrainTime: trainTimeInput,
       frequency: frequencyInput
+      // trainArrival: trainArrival,
+      // minsToArival: minsToArrival,
     };
 
     fireDB.ref().push(newTrainInfo);
@@ -53,83 +55,146 @@ $(document).ready(function() {
     $("#destinationInput").val("");
     $("#trainTimeInput").val("");
     $("#frequencyInput").val("");
-    appendToTable();
 
-    //test #1
-    console.log(newTrainInfo.name);
-    console.log(newTrainInfo.line);
-    console.log(newTrainInfo.destination);
-    console.log(newTrainInfo.firstTrainTime);
-    console.log(newTrainInfo.frequency);
   });
 
-  //create an object to hold variables
-  let appendToTable = function() {
-    // Used to append or add the newly added train info into the table
-    fireDB
-      .ref()
-      .orderByChild("dateAdded")
-      .limitToLast(1)
-      .on("child_added", function(snapshot) {
-        let sv = snapshot.val();
-        console.log(sv);
-
-        //Create a variable that the function responsible for calculating time
-        
-       let calcTimeArr = sv.firstTrainTime.split(":");
-       //Test#2
-       console.log(calcTimeArr)
-       let hoursToMinutes = moment().hours(calcTimeArr[0]).minutes(calcTimeArr[1])
-       //Test #3
-       console.log(hoursToMinutes)
-       let minsToArrival;
-       let trainArrival;
-       //Test #4
-        console.log(minsToArrival)
-        console.log(trainArrival)
-
-        let trainMax = moment.max(moment(), hoursToMinutes)
-        //test#5
-        console.log(trainMax)
-
-        if (trainMax === hoursToMinutes) {
-          trainArrival = hoursToMinutes.format("hh:mm A")
-          minsToArrival = hoursToMinutes.diff(moment(), "minutes")
-          console.log(hoursToMinutes)
-          console.log(trainArrival)
-          console.log(minsToArrival)
-        } else {
-          let timeDifference = moment().diff(hoursToMinutes, "minutes")
-          let trainRemainder = timeDifference%sv.frequency
-          console.log(timeDifference)
-          console.log(trainRemainder)
-          //Redefine mins to arrival = minsToArival
-          minsToArrival = sv.frequency - trainRemainder
-          //Refine arrival time back to military time
-          trainArrival = moment().add(minsToArrival, "m").format("hh:mm A")
-          console.log(minsToArrival)
-          console.log(trainArrival)
-        }
-        //advance jquery method used
-         let tr = `<tr><td>${sv.name}</td><td>${sv.line}</td><td>${sv.destination}</td>
-                 <td>${sv.frequency}</td><td>${trainArrival}</td>
-                 <td>${minsToArrival}</td></tr>`;
-
-        // appending to the table body
-        $("tbody").append(tr);
-      });
-  };
-  // variable and functions use to calculate the next train time
-
   // Used to append or add the newly added train info into the table
+  fireDB
+    .ref()
+    .orderByChild("dateAdded")
+    .on("child_added", function(snapshot) {
+      let sv = snapshot.val();
+      console.log(sv);
 
-  //create a firebase function to fire on event newRowAdded
+      //Create a variable that the function responsible for calculating time
 
-  //-- need to store firebase data into variable 'storedFbData'
+      let calcTimeArr = sv.firstTrainTime.split(":");
+      //Test#2
+      console.log(calcTimeArr);
+      let hoursToMinutes = moment()
+        .hours(calcTimeArr[0])
+        .minutes(calcTimeArr[1]);
+      
+      let trainArrival = calculateNextArrival(hoursToMinutes, sv.frequency);
+      let minsToArrival = trainArrival.diff(moment(), "minutes");
 
-  //math using 'moment' to calculate two fields of next arrival and minutes away.
+      //need to connect to firebase to add minsToArrival and trainArrival
+      //advance jquery method used
+      trainArr.push({
+        name: sv.name,
+        line: sv.line,
+        destination: sv.destination,
+        firstTrainTime: sv.firstTrainTime,
+        frequency: sv.frequency,
+        trainArrival: trainArrival.format("hh:mm A"),
+        minsToArrival: minsToArrival
+      });
 
-  // Add info from FB to newly created table. END. on to extra credit!!!
+      renderTrainRows();
+    });
 
-  // look at moment.js and docs and time library functionality/ built in functions.
+  function renderTrainRows() {
+    $('tbody').empty();
+    for (let i = 0; i < trainArr.length; i++) {
+      const train = trainArr[i];
+      let tr = `
+        <tr>
+          <td>${train.name}</td>
+          <td>${train.line}</td>
+          <td>${train.destination}</td>
+          <td>${train.frequency}</td>
+          <td>${train.trainArrival}</td>
+          <td>${train.minsToArrival}</td>
+        </tr>`;
+      // appending to the table body
+      $("tbody").append(tr);
+    }
+  }
+
+  function calculateNextArrival(initialTime, frequency) {
+    let trainMax = moment.max(moment(), moment(initialTime));
+
+    let trainArrival;
+    if (trainMax === initialTime) {
+      trainArrival = initialTime.format("hh:mm A");
+    } else {
+      let timeDifference = moment().diff(initialTime, "minutes");
+      let trainRemainder = timeDifference % frequency;
+      
+      //Redefine mins to arrival = minsToArival
+      minsToArrival = frequency - trainRemainder;
+      //Refine arrival time back to military time
+      trainArrival = moment()
+        .add(minsToArrival, "m");
+    }
+
+    return trainArrival;
+  }
+  
+  function updateArrivalTimes() {
+    let trainInfo = fireDB.ref().orderByKey();
+    console.log(trainInfo);
+    for (let i = 0; i < trainArr.length; i++) {
+      const train = trainArr[i];
+      let trainArrival = calculateNextArrival(train.initialTime, train.frequency);
+      train.trainArrival = trainArrival.format("hh:mm A");
+      train.minsToArrival = trainArrival.diff(moment(), "minutes");
+    }
+    renderTrainRows();
+  }
+  setInterval(updateArrivalTimes, 1000 * 6);
 });
+
+// setTimeout(sixtySeconds, 1000 * 6);
+// function sixtySeconds() {
+//   let trainInfo = fireDB.ref().orderByKey();
+//   console.log(trainInfo)
+//   // console.log(trainArrival);
+//   // console.log(minsToArrival);
+
+// }
+// variable and functions use to calculate the next train time
+
+// Used to append or add the newly added train info into the table
+
+//create a firebase function to fire on event newRowAdded
+
+//-- need to store firebase data into variable 'storedFbData'
+
+//math using 'moment' to calculate two fields of next arrival and minutes away.
+
+// Add info from FB to newly created table. END. on to extra credit!!!
+
+// look at moment.js and docs and time library functionality/ built in functions.
+
+// From Leah Daniels to Everyone:  02:32 PM
+// $.ajax({
+//   dataType: 'json',
+//   url: 'https://developers.zomato.com/api/v2.1/cities',
+//   headers: {
+//     'user-key': 'put your key in here'
+//   }
+//   success: function(response, status, xhr) {
+//     // Handle the response here.
+//   }
+// });
+// From Leah Daniels to Everyone:  04:01 PM
+// var leadsRef = database.ref('leads');
+// lfireDB.ref().on('value', function(snapshot) {
+//     snapshot.forEach(function(childSnapshot) {
+//       var childData = childSnapshot.val();
+//     });
+// });
+// From Leah Daniels to Everyone:  04:18 PM
+// // https://firebase.google.com/docs/database/web/read-and-write#basic_write
+// // https://stackoverflow.com/questions/49101324/android-firebase-update-existing-value-instead-of-setvalue-creating-a-new-record
+// //https://firebase.google.com/docs/database/web/read-and-write#basic_write
+// https://stackoverflow.com/questions/49101324/android-firebase-update-existing-value-instead-of-setvalue-creating-a-new-record
+// https://stackoverflow.com/questions/48904039/is-it-possible-to-update-only-specific-data-on-my-child-on-firebase
+ //bonus material timer
+  //var time;
+  //var countDownSeconds = 60;
+  // fireDB.ref().on('value', function(snapshot) {
+  //   snapshot.forEach(function(childSnapshot) {
+  //     var childData = childSnapshot.val();
+  //     console.log(childData)
